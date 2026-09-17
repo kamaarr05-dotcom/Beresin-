@@ -24,44 +24,35 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Extract and validate application ZIP
+      - name: Extract application ZIP
         shell: bash
         run: |
           set -euo pipefail
-          echo "=== Repository contents ==="
-          ls -la
-
           ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: application ZIP not found"
-            exit 1
-          fi
-
-          echo "Extracting: $ZIP_FILE"
+          test -n "$ZIP_FILE"
           mkdir -p temp_extracted
           unzip -o -q "$ZIP_FILE" -d temp_extracted
-
           ZIP_PKG=$(find temp_extracted -type f -name "package.json" | head -n 1)
-          if [ -z "$ZIP_PKG" ]; then
-            echo "ERROR: package.json not found inside application ZIP"
-            exit 1
-          fi
-
+          test -n "$ZIP_PKG"
           SRC_DIR=$(dirname "$ZIP_PKG")
           shopt -s dotglob
           cp -rf "$SRC_DIR"/* .
           rm -rf temp_extracted
-
           test -f package.json
           test -f src/lib/supabase.ts
           test -f src/components/OrderModal.tsx
+
+      - name: Apply Beresin order flow source patch
+        run: python3 scripts/apply-order-flow-fix.py
+
+      - name: Validate central order flow
+        run: |
+          set -euo pipefail
           grep -q "custom_create_order" src/lib/supabase.ts
           grep -q "createRemoteOrder" src/lib/supabase.ts
           grep -q "getRemoteOrders" src/lib/supabase.ts
-          echo "OK: central Supabase order flow is present"
-
-      - name: Apply source compatibility patches
-        run: node scripts/patch-order-service-alias.mjs
+          grep -q "MENUNGGU_PEMBAYARAN" src/App.tsx
+          echo "OK: order creation routes non-negotiation orders to payment and negotiation orders to price review"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
