@@ -45,14 +45,19 @@ jobs:
       - name: Apply Beresin order flow source patch
         run: python3 scripts/apply-order-flow-fix.py
 
-      - name: Validate central order flow
+      - name: Apply lifecycle and notification source patch
+        run: python3 scripts/apply-lifecycle-notification-fix.py
+
+      - name: Validate central order flow and lifecycle
         run: |
           set -euo pipefail
           grep -q "custom_create_order" src/lib/supabase.ts
           grep -q "createRemoteOrder" src/lib/supabase.ts
           grep -q "getRemoteOrders" src/lib/supabase.ts
+          grep -q "custom_order_action" src/lib/supabase.ts
+          grep -q "getNotifications" src/lib/supabase.ts
           grep -q "MENUNGGU_PEMBAYARAN" src/App.tsx
-          echo "OK: order creation routes non-negotiation orders to payment and negotiation orders to price review"
+          echo "OK: central order creation, lifecycle actions, and notifications are present"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
