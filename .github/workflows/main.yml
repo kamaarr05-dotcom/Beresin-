@@ -60,6 +60,9 @@ jobs:
           grep -q "getRemoteOrders" src/lib/supabase.ts
           echo "OK: central Supabase order flow is present"
 
+      - name: Apply source compatibility patches
+        run: node scripts/patch-order-service-alias.mjs
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
