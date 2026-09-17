@@ -13,7 +13,8 @@ text = text.replace(
     "  onOrderCreated: () => void;",
     "  onOrderCreated: (order: import('../types').OrderItem) => void;",
 )
-text = text.replace("      onOrderCreated();", "      if (order) onOrderCreated(order);")
+text = text.replace("      if (order) onOrderCreated(order);", "      if (result.order) onOrderCreated(result.order);")
+text = text.replace("      onOrderCreated();", "      if (result.order) onOrderCreated(result.order);")
 order_modal.write_text(text)
 
 text = app.read_text()
