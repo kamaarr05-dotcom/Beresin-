@@ -7,87 +7,78 @@ on:
       - master
   workflow_dispatch:
 
-# Berikan izin token GitHub untuk deploy ke GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Mencegah tabrakan proses deployment ganda
 concurrency:
   group: 'pages'
   cancel-in-progress: false
 
 jobs:
-  # Tahap 1: Ekstrak, Install Dependencies, & Build dengan Kredensial Supabase
   build:
     name: Build Web App with Supabase
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 2. Deteksi, Ekstrak ZIP & Siapkan File Proyek
+      - name: Extract and validate application ZIP
+        shell: bash
         run: |
-          echo "=== 1. Memeriksa isi repositori ==="
+          set -euo pipefail
+          echo "=== Repository contents ==="
           ls -la
 
-          # Cari file .zip yang di-upload ke repositori (misal: beresin (2).zip)
-          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
-
-          if [ -n "$ZIP_FILE" ]; then
-            echo "📦 Menemukan file ZIP: '$ZIP_FILE'. Mengekstrak otomatis..."
-            mkdir -p temp_extracted
-            unzip -o -q "$ZIP_FILE" -d temp_extracted
-            echo "✅ Berhasil diekstrak."
-
-            # Cari package.json di dalam hasil ekstraksi
-            ZIP_PKG=$(find temp_extracted -name "package.json" | head -n 1)
-            if [ -n "$ZIP_PKG" ]; then
-              SRC_DIR=$(dirname "$ZIP_PKG")
-              echo "Memindahkan isi proyek dari: $SRC_DIR ke root..."
-              shopt -s dotglob
-              cp -rf "$SRC_DIR"/* .
-            fi
-            rm -rf temp_extracted
-          fi
-
-          # Validasi apakah package.json sudah berada di root atau subfolder
-          PKG_PATH=$(find . -maxdepth 3 -name "package.json" -not -path "*/node_modules/*" | head -n 1)
-
-          if [ -z "$PKG_PATH" ]; then
-            echo "❌ ERROR: File package.json tidak ditemukan di repositori!"
-            ls -la
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: application ZIP not found"
             exit 1
           fi
 
-          APP_DIR=$(dirname "$PKG_PATH")
-          echo "✅ package.json aktif di folder: $APP_DIR"
-          if [ "$APP_DIR" != "." ]; then
-            echo "Memindahkan file dari $APP_DIR ke root..."
-            shopt -s dotglob
-            cp -rf "$APP_DIR"/* .
-            rm -rf "$APP_DIR" || true
+          echo "Extracting: $ZIP_FILE"
+          mkdir -p temp_extracted
+          unzip -o -q "$ZIP_FILE" -d temp_extracted
+
+          ZIP_PKG=$(find temp_extracted -type f -name "package.json" | head -n 1)
+          if [ -z "$ZIP_PKG" ]; then
+            echo "ERROR: package.json not found inside application ZIP"
+            exit 1
           fi
 
-          echo "=== 2. File siap dibuild ==="
-          ls -la
+          SRC_DIR=$(dirname "$ZIP_PKG")
+          shopt -s dotglob
+          cp -rf "$SRC_DIR"/* .
+          rm -rf temp_extracted
 
-      - name: 3. Setup Node.js
+          test -f package.json
+          test -f src/lib/supabase.ts
+          test -f src/components/OrderModal.tsx
+          grep -q "custom_create_order" src/lib/supabase.ts
+          grep -q "createRemoteOrder" src/lib/supabase.ts
+          grep -q "getRemoteOrders" src/lib/supabase.ts
+          echo "OK: central Supabase order flow is present"
+
+      - name: Apply source compatibility patches
+        run: node scripts/patch-order-service-alias.mjs
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
-      - name: 4. Konfigurasi GitHub Pages
+      - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: 5. Install Dependencies
+      - name: Install Dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 6. Validasi Type Check
+      - name: Validate Type Check
         run: npm run lint
 
-      - name: 7. Build Vite dengan Supabase
+      - name: Build Vite with Supabase
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -95,12 +86,11 @@ jobs:
           npm run build
           cp dist/index.html dist/404.html
 
-      - name: 8. Upload Artifact ke GitHub Pages
+      - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist/
 
-  # Tahap 2: Rilis Otomatis ke GitHub Pages
   deploy:
     name: Publish to GitHub Pages
     needs: build
@@ -109,6 +99,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy ke GitHub Pages
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
