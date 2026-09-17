@@ -27,25 +27,51 @@ jobs:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 2. Cek & Siapkan Lokasi File Proyek
+      - name: 2. Deteksi, Ekstrak ZIP & Siapkan File Proyek
         run: |
-          echo "Memeriksa struktur file di repositori..."
+          echo "=== 1. Memeriksa isi repositori ==="
           ls -la
+
+          # Cari file .zip yang di-upload ke repositori (misal: beresin (2).zip)
+          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+
+          if [ -n "$ZIP_FILE" ]; then
+            echo "📦 Menemukan file ZIP: '$ZIP_FILE'. Mengekstrak otomatis..."
+            mkdir -p temp_extracted
+            unzip -o -q "$ZIP_FILE" -d temp_extracted
+            echo "✅ Berhasil diekstrak."
+
+            # Cari package.json di dalam hasil ekstraksi
+            ZIP_PKG=$(find temp_extracted -name "package.json" | head -n 1)
+            if [ -n "$ZIP_PKG" ]; then
+              SRC_DIR=$(dirname "$ZIP_PKG")
+              echo "Memindahkan isi proyek dari: $SRC_DIR ke root..."
+              shopt -s dotglob
+              cp -rf "$SRC_DIR"/* .
+            fi
+            rm -rf temp_extracted
+          fi
+
+          # Validasi apakah package.json sudah berada di root atau subfolder
           PKG_PATH=$(find . -maxdepth 3 -name "package.json" -not -path "*/node_modules/*" | head -n 1)
+
           if [ -z "$PKG_PATH" ]; then
             echo "❌ ERROR: File package.json tidak ditemukan di repositori!"
-            echo "Pastikan seluruh file proyek (package.json, src/, index.html, dll) sudah di-upload/di-push ke repositori GitHub ini."
+            ls -la
             exit 1
           fi
+
           APP_DIR=$(dirname "$PKG_PATH")
-          echo "✅ package.json ditemukan di folder: $APP_DIR"
+          echo "✅ package.json aktif di folder: $APP_DIR"
           if [ "$APP_DIR" != "." ]; then
-            echo "Memindahkan file dari subfolder $APP_DIR ke root..."
+            echo "Memindahkan file dari $APP_DIR ke root..."
             shopt -s dotglob
-            mv "$APP_DIR"/* .
-            rmdir "$APP_DIR" || true
-            ls -la
+            cp -rf "$APP_DIR"/* .
+            rm -rf "$APP_DIR" || true
           fi
+
+          echo "=== 2. File siap dibuild ==="
+          ls -la
 
       - name: 3. Setup Node.js
         uses: actions/setup-node@v4
