@@ -1,0 +1,88 @@
+name: Deploy lifecycle and notification fix
+
+on:
+  workflow_run:
+    workflows: ["Deploy to GitHub Pages"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-lifecycle-fix
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Extract application ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
+          test -n "$ZIP_FILE"
+          mkdir -p temp_extracted
+          unzip -o -q "$ZIP_FILE" -d temp_extracted
+          ZIP_PKG=$(find temp_extracted -type f -name "package.json" | head -n 1)
+          test -n "$ZIP_PKG"
+          SRC_DIR=$(dirname "$ZIP_PKG")
+          shopt -s dotglob
+          cp -rf "$SRC_DIR"/* .
+          rm -rf temp_extracted
+
+      - name: Apply order flow patch
+        run: python3 scripts/apply-order-flow-fix.py
+
+      - name: Apply lifecycle and notification patch
+        run: python3 scripts/apply-lifecycle-notification-fix.py
+
+      - name: Validate patches
+        run: |
+          set -euo pipefail
+          grep -q "custom_create_order" src/lib/supabase.ts
+          grep -q "custom_order_action" src/lib/supabase.ts
+          grep -q "getNotifications" src/lib/supabase.ts
+          grep -q "toastNotification" src/App.tsx
+          grep -q "orderAction('start_work'" src/components/AdminDashboard.tsx
+          echo "OK: order actions and notifications are wired"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Validate Type Check
+        run: npm run lint
+
+      - name: Build Vite with Supabase
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          npm run build
+          cp dist/index.html dist/404.html
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
