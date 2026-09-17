@@ -27,31 +27,49 @@ jobs:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 2. Setup Node.js
+      - name: 2. Cek & Siapkan Lokasi File Proyek
+        run: |
+          echo "Memeriksa struktur file di repositori..."
+          ls -la
+          PKG_PATH=$(find . -maxdepth 3 -name "package.json" -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$PKG_PATH" ]; then
+            echo "❌ ERROR: File package.json tidak ditemukan di repositori!"
+            echo "Pastikan seluruh file proyek (package.json, src/, index.html, dll) sudah di-upload/di-push ke repositori GitHub ini."
+            exit 1
+          fi
+          APP_DIR=$(dirname "$PKG_PATH")
+          echo "✅ package.json ditemukan di folder: $APP_DIR"
+          if [ "$APP_DIR" != "." ]; then
+            echo "Memindahkan file dari subfolder $APP_DIR ke root..."
+            shopt -s dotglob
+            mv "$APP_DIR"/* .
+            rmdir "$APP_DIR" || true
+            ls -la
+          fi
+
+      - name: 3. Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: 3. Konfigurasi GitHub Pages
+      - name: 4. Konfigurasi GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: 4. Install Dependencies
+      - name: 5. Install Dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 5. Validasi Type Check
+      - name: 6. Validasi Type Check
         run: npm run lint
 
-      - name: 6. Build Vite dengan Supabase
+      - name: 7. Build Vite dengan Supabase
         env:
-          # Injeksi kredensial Supabase dari GitHub Secrets
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           npm run build
-          # Salin index.html ke 404.html agar routing SPA tetap bekerja saat refresh di GitHub Pages
           cp dist/index.html dist/404.html
 
-      - name: 7. Upload Artifact ke GitHub Pages
+      - name: 8. Upload Artifact ke GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist/
