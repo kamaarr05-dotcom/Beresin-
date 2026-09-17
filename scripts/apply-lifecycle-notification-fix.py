@@ -53,7 +53,6 @@ if marker not in s: raise SystemExit('store insertion marker missing')
 s=s.replace(marker,insert+marker,1)
 store.write_text(s)
 
-# Admin actions become central Supabase mutations.
 s=admin.read_text()
 s=s.replace("  const handleSavePrice = (e: React.FormEvent) => {", "  const handleSavePrice = async (e: React.FormEvent) => {")
 s=s.replace("    BeresinDataStore.setFinalPrice(\n      pricingOrder.id,\n      Number(inputFinalPrice),\n      pricingOrder.negotiation_requested ? (negotiationDecision as any) : undefined,\n      adminNote.trim() || undefined\n    );", "    const result = await BeresinDataStore.orderAction('set_price', pricingOrder.id, currentUser?.id || '', { finalPrice: Number(inputFinalPrice), note: adminNote.trim() || undefined });\n    if (!result.success) { window.alert(result.message); return; }")
@@ -63,7 +62,6 @@ s=s.replace("  const handleStartWorking = (orderId: string) => {\n    BeresinDat
 s=s.replace("      BeresinDataStore.uploadWorkResult(\n        uploadResultOrder.id,\n        uploaded.fileName,\n        uploaded.fileUrl,\n        resultNotes.trim()\n      );", "      const result = await BeresinDataStore.orderAction('complete', uploadResultOrder.id, currentUser?.id || '', { fileName: uploaded.fileName, fileUrl: uploaded.fileUrl, note: resultNotes.trim() });\n      if (!result.success) throw new Error(result.message);")
 admin.write_text(s)
 
-# OrdersTab admin handlers are also centralized; student actions stay in the same UI but use RPCs.
 s=orders.read_text()
 s=s.replace("  const handleSavePrice = () => {", "  const handleSavePrice = async () => {")
 s=s.replace("    BeresinDataStore.setFinalPriceAndVoucher(\n      priceModalOrder.id,\n      finalPriceInput,\n      negoStatus,\n      adminNoteInput || undefined\n    );", "    const result = await BeresinDataStore.orderAction('set_price', priceModalOrder.id, currentUser?.id || '', { finalPrice: finalPriceInput, note: adminNoteInput || undefined });\n    if (!result.success) { window.alert(result.message); return; }")
@@ -72,27 +70,56 @@ s=s.replace("  const handleStartWorking = (orderId: string) => {\n    BeresinDat
 s=s.replace("      BeresinDataStore.completeOrder(\n        uploadResultOrder.id,\n        finalName,\n        resultNotes || undefined,\n        uploadedUrl\n      );", "      const result = await BeresinDataStore.orderAction('complete', uploadResultOrder.id, currentUser?.id || '', { fileName: finalName, fileUrl: uploadedUrl, note: resultNotes || undefined });\n      if (!result.success) throw new Error(result.message);")
 orders.write_text(s)
 
-# Student payment proof goes to Supabase.
 s=qris.read_text()
 s=s.replace("      BeresinDataStore.submitPaymentProof(\n        order.id,\n        uploaded.fileName,\n        uploaded.fileUrl\n      );", "      const result = await BeresinDataStore.orderAction('payment_proof', order.id, order.student_id, { fileName: uploaded.fileName, fileUrl: uploaded.fileUrl });\n      if (!result.success) throw new Error(result.message);")
 qris.write_text(s)
 
-# Student revision goes to Supabase.
 s=revision.read_text()
 s=s.replace("  const handleSubmit = (e: React.FormEvent) => {", "  const handleSubmit = async (e: React.FormEvent) => {")
 s=s.replace("    BeresinDataStore.requestRevision(order.id, revisionNotes.trim());", "    const result = await BeresinDataStore.orderAction('revision', order.id, order.student_id, { note: revisionNotes.trim() });\n    if (!result.success) { setErrorMsg(result.message); setIsSubmitting(false); return; }")
 revision.write_text(s)
 
-# Global notification toast + polling for every logged-in app instance.
 s=app.read_text()
-s=s.replace("  const [proofPreviewName, setProofPreviewName] = useState<string>('');", "  const [proofPreviewName, setProofPreviewName] = useState<string>('');\n  const [toastNotification, setToastNotification] = useState<{title: string; message: string} | null>(null);\n  const [lastNotificationId, setLastNotificationId] = useState<string | null>(null);")
+s=s.replace("  const [proofPreviewName, setProofPreviewName] = useState<string>('');", "  const [proofPreviewName, setProofPreviewName] = useState<string>('');\n  const [toastNotification, setToastNotification] = useState<{title: string; message: string} | null>(null);\n  const [lastNotificationId, setLastNotificationId] = useState<string | null>(null)")
 needle="  useEffect(() => {\n    refreshData();\n  }, [currentUser, role]);"
-replacement="""  useEffect(() => {\n    refreshData();\n  }, [currentUser, role]);\n\n  useEffect(() => {\n    if (!currentUser) return;\n    let active = true;\n    const poll = async () => {\n      const items = await BeresinDataStore.getNotifications(currentUser.id);\n      if (!active || items.length === 0) return;\n      const newest = items[0];\n      if (lastNotificationId && newest.id !== lastNotificationId) {\n        setToastNotification({ title: newest.title, message: newest.message });\n        window.setTimeout(() => setToastNotification(null), 5000);\n      }\n      if (!lastNotificationId) setLastNotificationId(newest.id);\n      else if (newest.id !== lastNotificationId) setLastNotificationId(newest.id);\n    };\n    void poll();\n    const timer = window.setInterval(() => void poll(), 4000);\n    return () => { active = false; window.clearInterval(timer); };\n  }, [currentUser?.id, lastNotificationId]);"""
+replacement="""  useEffect(() => {
+    refreshData();
+  }, [currentUser, role]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let active = true;
+    const poll = async () => {
+      const items = await BeresinDataStore.getNotifications(currentUser.id);
+      if (!active || items.length === 0) return;
+      const newest = items[0];
+      if (lastNotificationId && newest.id !== lastNotificationId) {
+        setToastNotification({ title: newest.title, message: newest.message });
+        window.setTimeout(() => setToastNotification(null), 5000);
+      }
+      if (!lastNotificationId) setLastNotificationId(newest.id);
+      else if (newest.id !== lastNotificationId) setLastNotificationId(newest.id);
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 4000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [currentUser?.id, lastNotificationId]);"""
 if needle not in s: raise SystemExit('App polling marker missing')
 s=s.replace(needle,replacement,1)
-# Render toast immediately before closing main app return container marker.
-render_marker="    <div className=\"min-h-screen"
-toast="""    {toastNotification && (\n      <div className=\"fixed top-4 right-4 z-[100] w-[min(92vw,380px)] rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl animate-in slide-in-from-top-3 duration-200\">\n        <div className=\"flex items-start gap-3\">\n          <div className=\"mt-0.5 h-9 w-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg\">✓</div>\n          <div className=\"min-w-0 flex-1\"><p className=\"font-black text-slate-900 text-sm\">{toastNotification.title}</p><p className=\"text-xs text-slate-600 mt-1\">{toastNotification.message}</p></div>\n          <button onClick={() => setToastNotification(null)} className=\"text-slate-400 hover:text-slate-700\">×</button>\n        </div>\n      </div>\n    )}\n"""
-if render_marker not in s: raise SystemExit('App render marker missing')
-s=s.replace(render_marker,toast+render_marker,1)
+
+# Insert toast only into the authenticated return, never the public landing-page return.
+render_marker='  return (\n    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col antialiased selection:bg-amber-400 selection:text-slate-950 font-sans pb-20 md:pb-0">'
+toast="""  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col antialiased selection:bg-amber-400 selection:text-slate-950 font-sans pb-20 md:pb-0">
+      {toastNotification && (
+        <div className="fixed top-4 right-4 z-[100] w-[min(92vw,380px)] rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl animate-in slide-in-from-top-3 duration-200">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 h-9 w-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg">✓</div>
+            <div className="min-w-0 flex-1"><p className="font-black text-slate-900 text-sm">{toastNotification.title}</p><p className="text-xs text-slate-600 mt-1">{toastNotification.message}</p></div>
+            <button onClick={() => setToastNotification(null)} className="text-slate-400 hover:text-slate-700">×</button>
+          </div>
+        </div>
+      )}"""
+if render_marker not in s: raise SystemExit('authenticated App return marker missing')
+s=s.replace(render_marker,toast,1)
 app.write_text(s)
