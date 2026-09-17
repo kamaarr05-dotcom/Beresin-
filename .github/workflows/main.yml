@@ -1,0 +1,71 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+# Berikan izin token GitHub untuk deploy ke GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Mencegah tabrakan proses deployment
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  # Tahap 1: Ekstrak, Install Dependencies, & Build dengan Kredensial Supabase
+  build:
+    name: Build Web App with Supabase
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 3. Konfigurasi GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: 4. Install Dependencies
+        run: npm ci || npm install
+
+      - name: 5. Validasi Type Check
+        run: npm run lint
+
+      - name: 6. Build Vite dengan Supabase
+        env:
+          # Injeksi kredensial Supabase dari GitHub Secrets
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          npm run build
+          # Salin index.html ke 404.html agar routing halaman tetap lancar saat di-refresh di GitHub Pages
+          cp dist/index.html dist/404.html
+
+      - name: 7. Upload Artifact ke GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  # Tahap 2: Rilis Otomatis ke GitHub Pages
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy ke GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
