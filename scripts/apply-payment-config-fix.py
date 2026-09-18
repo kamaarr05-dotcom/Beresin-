@@ -11,15 +11,11 @@ promo = ROOT / 'src/components/PromoBanner.tsx'
 voucher = ROOT / 'src/components/VoucherTab.tsx'
 
 s = store.read_text()
+s = s.replace("  whatsapp_number: '08136732365',", "  whatsapp_number: '628136732365',")
+s = s.replace("  bank_name: 'BCA',", "  bank_name: 'DANA',")
+s = s.replace("  bank_account_number: '887012345678',", "  bank_account_number: '081224405119',")
+s = s.replace("  bank_account_holder: 'BERESIN JASA',", "  bank_account_holder: 'Hesti Kurnia',")
 old = """  static getPaymentConfig(): AdminPaymentConfig {
-    return getStored<AdminPaymentConfig>(STORAGE_KEYS.PAYMENT_CONFIG, DEFAULT_PAYMENT_CONFIG);
-  }
-
-  static savePaymentConfig(config: AdminPaymentConfig): void {
-    setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
-  }
-"""
-new = """  static getPaymentConfig(): AdminPaymentConfig {
     return getStored<AdminPaymentConfig>(STORAGE_KEYS.PAYMENT_CONFIG, DEFAULT_PAYMENT_CONFIG);
   }
 
@@ -34,21 +30,25 @@ new = """  static getPaymentConfig(): AdminPaymentConfig {
     setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
     return config;
   }
-
-  static async savePaymentConfig(config: AdminPaymentConfig, adminUserId?: string): Promise<{ success: boolean; message: string; config?: AdminPaymentConfig }> {
-    const supabase = getSupabase();
-    if (!supabase || !adminUserId) {
-      setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
-      return { success: true, message: 'Tersimpan di perangkat.', config };
+"""
+new = """  static getPaymentConfig(): AdminPaymentConfig {
+    const stored = getStored<AdminPaymentConfig>(STORAGE_KEYS.PAYMENT_CONFIG, DEFAULT_PAYMENT_CONFIG);
+    if (stored.bank_account_number === '887012345678' || stored.whatsapp_number === '08136732365') {
+      return { ...DEFAULT_PAYMENT_CONFIG, ...stored, whatsapp_number: DEFAULT_PAYMENT_CONFIG.whatsapp_number, bank_name: DEFAULT_PAYMENT_CONFIG.bank_name, bank_account_number: DEFAULT_PAYMENT_CONFIG.bank_account_number, bank_account_holder: DEFAULT_PAYMENT_CONFIG.bank_account_holder };
     }
-    const { data, error } = await supabase.rpc('custom_save_payment_config', {
-      p_admin_user_id: adminUserId,
-      p_config: config,
-    });
+    return stored;
+  }
+
+  static async loadPaymentConfig(): Promise<AdminPaymentConfig> {
+    const supabase = getSupabase();
+    if (!supabase) return this.getPaymentConfig();
+    const { data, error } = await supabase.rpc('custom_get_payment_config');
     const payload = data?.config ?? data;
-    if (error || !data?.success && !payload?.success) return { success: false, message: error?.message || data?.message || payload?.message || 'Gagal menyimpan pengaturan ke server.' };
+    const remoteConfig = payload?.config ?? payload;
+    if (error || (!data?.success && !payload?.success) || !remoteConfig) return this.getPaymentConfig();
+    const config = { ...DEFAULT_PAYMENT_CONFIG, ...(remoteConfig as Partial<AdminPaymentConfig>) };
     setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
-    return { success: true, message: data.message || payload?.message || 'Berhasil disimpan.', config };
+    return config;
   }
 """
 if old not in s: raise SystemExit('payment methods marker missing')
