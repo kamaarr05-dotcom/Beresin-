@@ -28,11 +28,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="./Beresin-custom-auth-v6-order-central-fixed (1).zip"
-          test -f "$ZIP_FILE"
+          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name '*.zip' -not -path './.git/*' | sort)
+          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
+            echo "ERROR: expected exactly one application ZIP, found ${#ZIP_FILES[@]}"
+            printf '%s\n' "${ZIP_FILES[@]}"
+            exit 1
+          fi
+          ZIP_FILE="${ZIP_FILES[0]}"
+          echo "Using application ZIP: $ZIP_FILE"
           mkdir -p temp_extracted
           unzip -o -q "$ZIP_FILE" -d temp_extracted
-          ZIP_PKG=$(find temp_extracted -type f -name "package.json" | head -n 1)
+          ZIP_PKG=$(find temp_extracted -type f -name 'package.json' | sort | head -n 1)
           test -n "$ZIP_PKG"
           SRC_DIR=$(dirname "$ZIP_PKG")
           shopt -s dotglob
@@ -66,7 +72,7 @@ jobs:
           grep -q "081224405119" src/lib/supabase.ts
           grep -q "Hesti Kurnia" src/lib/supabase.ts
           grep -q "628136732365" src/lib/supabase.ts
-          if grep -R -n --exclude-dir=node_modules --exclude-dir=.git -E "08136732365|887012345678|BERESIN JASA" src; then
+          if grep -R -n --exclude-dir=node_modules --exclude-dir=.git -E "08136732365|887012345678|BERESIN JASA|6281234567890" src; then
             echo "ERROR: legacy payment/contact values remain in source"
             exit 1
           fi
