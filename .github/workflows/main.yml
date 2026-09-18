@@ -28,8 +28,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
-          test -n "$ZIP_FILE"
+          ZIP_FILE="./Beresin-custom-auth-v6-order-central-fixed (1).zip"
+          test -f "$ZIP_FILE"
           mkdir -p temp_extracted
           unzip -o -q "$ZIP_FILE" -d temp_extracted
           ZIP_PKG=$(find temp_extracted -type f -name "package.json" | head -n 1)
@@ -63,12 +63,14 @@ jobs:
           grep -q "custom_save_payment_config" src/lib/supabase.ts
           grep -q "loadPaymentConfig" src/lib/supabase.ts
           grep -q "MENUNGGU_PEMBAYARAN" src/App.tsx
-          ! grep -q "beresin_payment_config_v1" src/lib/supabase.ts
-          ! grep -q "beresin_payment_config_v2" src/lib/supabase.ts
           grep -q "081224405119" src/lib/supabase.ts
           grep -q "Hesti Kurnia" src/lib/supabase.ts
           grep -q "628136732365" src/lib/supabase.ts
-          echo "OK: central order, lifecycle, notification, bank, WhatsApp, and payment flows are present"
+          if grep -R -n --exclude-dir=node_modules --exclude-dir=.git -E "08136732365|887012345678|BERESIN JASA" src; then
+            echo "ERROR: legacy payment/contact values remain in source"
+            exit 1
+          fi
+          echo "OK: central order, lifecycle, notification, bank, WhatsApp, and payment flows are present with no retired values"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
