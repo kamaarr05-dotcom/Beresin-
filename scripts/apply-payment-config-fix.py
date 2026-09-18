@@ -11,8 +11,46 @@ promo = ROOT / 'src/components/PromoBanner.tsx'
 voucher = ROOT / 'src/components/VoucherTab.tsx'
 
 s = store.read_text()
-old = """  static getPaymentConfig(): AdminPaymentConfig {\n    return getStored<AdminPaymentConfig>(STORAGE_KEYS.PAYMENT_CONFIG, DEFAULT_PAYMENT_CONFIG);\n  }\n\n  static savePaymentConfig(config: AdminPaymentConfig): void {\n    setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);\n  }\n"""
-new = """  static getPaymentConfig(): AdminPaymentConfig {\n    return getStored<AdminPaymentConfig>(STORAGE_KEYS.PAYMENT_CONFIG, DEFAULT_PAYMENT_CONFIG);\n  }\n\n  static async loadPaymentConfig(): Promise<AdminPaymentConfig> {\n    const supabase = getSupabase();\n    if (!supabase) return this.getPaymentConfig();\n    const { data, error } = await supabase.rpc('custom_get_payment_config');\n    if (error || !data?.success || !data.config) return this.getPaymentConfig();\n    const config = { ...DEFAULT_PAYMENT_CONFIG, ...(data.config as Partial<AdminPaymentConfig>) };\n    setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);\n    return config;\n  }\n\n  static async savePaymentConfig(config: AdminPaymentConfig, adminUserId?: string): Promise<{ success: boolean; message: string; config?: AdminPaymentConfig }> {\n    const supabase = getSupabase();\n    if (!supabase || !adminUserId) {\n      setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);\n      return { success: true, message: 'Tersimpan di perangkat.', config };\n    }\n    const { data, error } = await supabase.rpc('custom_save_payment_config', {\n      p_admin_user_id: adminUserId,\n      p_config: config,\n    });\n    if (error || !data?.success) return { success: false, message: error?.message || data?.message || 'Gagal menyimpan pengaturan ke server.' };\n    setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);\n    return { success: true, message: data.message || 'Berhasil disimpan.', config };\n  }\n"""
+old = """  static getPaymentConfig(): AdminPaymentConfig {
+    return getStored<AdminPaymentConfig>(STORAGE_KEYS.PAYMENT_CONFIG, DEFAULT_PAYMENT_CONFIG);
+  }
+
+  static savePaymentConfig(config: AdminPaymentConfig): void {
+    setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
+  }
+"""
+new = """  static getPaymentConfig(): AdminPaymentConfig {
+    return getStored<AdminPaymentConfig>(STORAGE_KEYS.PAYMENT_CONFIG, DEFAULT_PAYMENT_CONFIG);
+  }
+
+  static async loadPaymentConfig(): Promise<AdminPaymentConfig> {
+    const supabase = getSupabase();
+    if (!supabase) return this.getPaymentConfig();
+    const { data, error } = await supabase.rpc('custom_get_payment_config');
+    const payload = data?.config ?? data;
+    const remoteConfig = payload?.config ?? payload;
+    if (error || !data?.success && !payload?.success || !remoteConfig) return this.getPaymentConfig();
+    const config = { ...DEFAULT_PAYMENT_CONFIG, ...(remoteConfig as Partial<AdminPaymentConfig>) };
+    setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
+    return config;
+  }
+
+  static async savePaymentConfig(config: AdminPaymentConfig, adminUserId?: string): Promise<{ success: boolean; message: string; config?: AdminPaymentConfig }> {
+    const supabase = getSupabase();
+    if (!supabase || !adminUserId) {
+      setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
+      return { success: true, message: 'Tersimpan di perangkat.', config };
+    }
+    const { data, error } = await supabase.rpc('custom_save_payment_config', {
+      p_admin_user_id: adminUserId,
+      p_config: config,
+    });
+    const payload = data?.config ?? data;
+    if (error || !data?.success && !payload?.success) return { success: false, message: error?.message || data?.message || payload?.message || 'Gagal menyimpan pengaturan ke server.' };
+    setStored(STORAGE_KEYS.PAYMENT_CONFIG, config);
+    return { success: true, message: data.message || payload?.message || 'Berhasil disimpan.', config };
+  }
+"""
 if old not in s: raise SystemExit('payment methods marker missing')
 s = s.replace(old, new, 1)
 store.write_text(s)
@@ -21,16 +59,44 @@ s = admin.read_text()
 s = s.replace("import React, { useState } from 'react';", "import React, { useEffect, useState } from 'react';")
 s = s.replace("import { BeresinDataStore } from '../lib/supabase';", "import { BeresinDataStore } from '../lib/supabase';\nimport { useAuth } from '../context/AuthContext';")
 s = s.replace("  const [config, setConfig] = useState<AdminPaymentConfig>(() => BeresinDataStore.getPaymentConfig());", "  const { currentUser } = useAuth();\n  const [config, setConfig] = useState<AdminPaymentConfig>(() => BeresinDataStore.getPaymentConfig());\n  const [isSaving, setIsSaving] = useState(false);\n\n  useEffect(() => {\n    let active = true;\n    void BeresinDataStore.loadPaymentConfig().then(remote => { if (active) setConfig(remote); });\n    return () => { active = false; };\n  }, []);")
-old = """  const handleSave = (e: React.FormEvent) => {\n    e.preventDefault();\n    BeresinDataStore.savePaymentConfig(config);\n    setSuccessMessage('Pengaturan Kartu Bank & Kontak WhatsApp berhasil disimpan!');\n    onSaved?.();\n    setTimeout(() => {\n      setSuccessMessage('');\n    }, 3000);\n  };"""
-new = """  const handleSave = async (e: React.FormEvent) => {\n    e.preventDefault();\n    if (!currentUser?.id || isSaving) return;\n    setIsSaving(true);\n    const result = await BeresinDataStore.savePaymentConfig(config, currentUser.id);\n    setIsSaving(false);\n    if (!result.success) { window.alert(result.message); return; }\n    if (result.config) setConfig(result.config);\n    setSuccessMessage('Pengaturan Kartu Bank & Kontak WhatsApp berhasil disimpan di server!');\n    onSaved?.();\n    setTimeout(() => setSuccessMessage(''), 3000);\n  };"""
+old = """  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    BeresinDataStore.savePaymentConfig(config);
+    setSuccessMessage('Pengaturan Kartu Bank & Kontak WhatsApp berhasil disimpan!');
+    onSaved?.();
+    setTimeout(() => {
+      setSuccessMessage('');
+    }, 3000);
+  };"""
+new = """  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser?.id || isSaving) return;
+    setIsSaving(true);
+    const result = await BeresinDataStore.savePaymentConfig(config, currentUser.id);
+    setIsSaving(false);
+    if (!result.success) { window.alert(result.message); return; }
+    if (result.config) setConfig(result.config);
+    setSuccessMessage('Pengaturan Kartu Bank & Kontak WhatsApp berhasil disimpan di server!');
+    onSaved?.();
+    setTimeout(() => setSuccessMessage(''), 3000);
+  };"""
 if old not in s: raise SystemExit('admin save handler missing')
 s = s.replace(old, new, 1)
 s = s.replace("      BeresinDataStore.savePaymentConfig(defaultConfig);\n      setConfig(defaultConfig);", "      if (!currentUser?.id) return;\n      void BeresinDataStore.savePaymentConfig(defaultConfig, currentUser.id).then(result => {\n        if (!result.success) window.alert(result.message);\n        else setConfig(result.config || defaultConfig);\n      });")
 admin.write_text(s)
 
 s = qris.read_text()
-old = """  useEffect(() => {\n    if (isOpen) {\n      setPaymentConfig(BeresinDataStore.getPaymentConfig());\n    }\n  }, [isOpen]);"""
-new = """  useEffect(() => {\n    if (!isOpen) return;\n    let active = true;\n    void BeresinDataStore.loadPaymentConfig().then(remote => { if (active) setPaymentConfig(remote); });\n    return () => { active = false; };\n  }, [isOpen]);"""
+old = """  useEffect(() => {
+    if (isOpen) {
+      setPaymentConfig(BeresinDataStore.getPaymentConfig());
+    }
+  }, [isOpen]);"""
+new = """  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    void BeresinDataStore.loadPaymentConfig().then(remote => { if (active) setPaymentConfig(remote); });
+    return () => { active = false; };
+  }, [isOpen]);"""
 if old not in s: raise SystemExit('QRIS config effect missing')
 s = s.replace(old, new, 1)
 qris.write_text(s)
@@ -40,7 +106,9 @@ if 'setPaymentConfigVersion' not in s:
     marker = "  const [proofPreviewName, setProofPreviewName] = useState<string>('');"
     if marker not in s: raise SystemExit('App payment state marker missing')
     s = s.replace(marker, marker + "\n  const [, setPaymentConfigVersion] = useState(0);", 1)
-marker = """  useEffect(() => {\n    refreshData();\n  }, [currentUser, role]);"""
+marker = """  useEffect(() => {
+    refreshData();
+  }, [currentUser, role]);"""
 if marker not in s: raise SystemExit('App refresh marker missing')
 if 'loadPaymentConfig' not in s:
     s = s.replace(marker, marker + "\n\n  useEffect(() => {\n    void BeresinDataStore.loadPaymentConfig().then(() => setPaymentConfigVersion(v => v + 1));\n  }, [currentUser?.id]);", 1)
