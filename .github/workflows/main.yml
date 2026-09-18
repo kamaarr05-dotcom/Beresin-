@@ -51,28 +51,6 @@ jobs:
       - name: Apply central payment settings source patch
         run: python3 scripts/apply-payment-config-fix.py
 
-      - name: Reset legacy payment config cache key
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path("src/lib/supabase.ts")
-          s = p.read_text()
-          s2, n = re.subn(
-              r"(PAYMENT_CONFIG\s*:\s*')[^']+(')",
-              r"\1beresin_payment_config_v2\2",
-              s,
-              count=1,
-          )
-          if n != 1:
-              raise SystemExit("payment storage key marker missing")
-          p.write_text(s2)
-          PY
-          grep -q "beresin_payment_config_v2" src/lib/supabase.ts
-          ! grep -q "beresin_payment_config_v1" src/lib/supabase.ts
-
       - name: Validate central order, lifecycle, and payment settings flow
         run: |
           set -euo pipefail
@@ -85,12 +63,12 @@ jobs:
           grep -q "custom_save_payment_config" src/lib/supabase.ts
           grep -q "loadPaymentConfig" src/lib/supabase.ts
           grep -q "MENUNGGU_PEMBAYARAN" src/App.tsx
-          grep -q "beresin_payment_config_v2" src/lib/supabase.ts
           ! grep -q "beresin_payment_config_v1" src/lib/supabase.ts
+          ! grep -q "beresin_payment_config_v2" src/lib/supabase.ts
           grep -q "081224405119" src/lib/supabase.ts
           grep -q "Hesti Kurnia" src/lib/supabase.ts
           grep -q "628136732365" src/lib/supabase.ts
-          echo "OK: central order, lifecycle, notification, bank, WhatsApp, and payment cache flows are present"
+          echo "OK: central order, lifecycle, notification, bank, WhatsApp, and payment flows are present"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -113,7 +91,23 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           npm run build
-          cp dist/index.html dist/404.html
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          version = "${{ github.sha }}"
+          for name in ("index.html", "404.html"):
+              p = Path("dist") / name
+              if not p.exists():
+                  if name == "404.html":
+                      continue
+                  raise SystemExit(f"missing {p}")
+              s = p.read_text()
+              s = re.sub(r'(src="/Beresin-/assets/[^"?]+\.js)(")', rf'\1?v={version}\2', s)
+              s = re.sub(r'(href="/Beresin-/assets/[^"?]+\.css)(")', rf'\1?v={version}\2', s)
+              s = s.replace("</head>", '<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0"></head>')
+              p.write_text(s)
+          Path("dist/404.html").write_text(Path("dist/index.html").read_text())
+          PY
 
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
