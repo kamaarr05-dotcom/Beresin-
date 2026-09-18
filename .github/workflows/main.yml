@@ -48,7 +48,10 @@ jobs:
       - name: Apply lifecycle and notification source patch
         run: python3 scripts/apply-lifecycle-notification-fix.py
 
-      - name: Validate central order flow and lifecycle
+      - name: Apply central payment settings source patch
+        run: python3 scripts/apply-payment-config-fix.py
+
+      - name: Validate central order, lifecycle, and payment settings flow
         run: |
           set -euo pipefail
           grep -q "custom_create_order" src/lib/supabase.ts
@@ -56,8 +59,11 @@ jobs:
           grep -q "getRemoteOrders" src/lib/supabase.ts
           grep -q "custom_order_action" src/lib/supabase.ts
           grep -q "getNotifications" src/lib/supabase.ts
+          grep -q "custom_get_payment_config" src/lib/supabase.ts
+          grep -q "custom_save_payment_config" src/lib/supabase.ts
+          grep -q "loadPaymentConfig" src/lib/supabase.ts
           grep -q "MENUNGGU_PEMBAYARAN" src/App.tsx
-          echo "OK: central order creation, lifecycle actions, and notifications are present"
+          echo "OK: central order, lifecycle, notification, bank, and WhatsApp flows are present"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
